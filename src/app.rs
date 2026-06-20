@@ -822,7 +822,6 @@ fn show_info_dialog(window: &gtk::ApplicationWindow) {
         .modal(true)
         .default_width(420)
         .build();
-    dialog.add_button("Close", gtk::ResponseType::Close);
 
     let content = dialog.content_area();
     content.set_spacing(16);
@@ -831,7 +830,7 @@ fn show_info_dialog(window: &gtk::ApplicationWindow) {
     content.set_margin_start(24);
     content.set_margin_end(24);
 
-    let icon = gtk::Image::from_icon_name("dev.parquetta.Parquetta");
+    let icon = app_icon_image(96);
     icon.set_pixel_size(96);
     content.append(&icon);
 
@@ -865,6 +864,18 @@ fn show_info_dialog(window: &gtk::ApplicationWindow) {
 
     dialog.connect_response(|dialog, _| dialog.destroy());
     dialog.present();
+}
+
+fn app_icon_image(size: i32) -> gtk::Image {
+    let icon_file = gio::File::for_path("Parquetta.svg");
+    match gtk::gdk::Texture::from_file(&icon_file) {
+        Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
+        Err(_) => {
+            let image = gtk::Image::from_icon_name("dialog-information-symbolic");
+            image.set_pixel_size(size);
+            image
+        }
+    }
 }
 
 fn info_section(title: &str, body: &str, link: Option<(&str, &str)>) -> gtk::Box {
