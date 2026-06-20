@@ -5,6 +5,9 @@ use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::thread;
+use std::time::Duration;
 
 const PAGE_SIZE: u64 = 1000;
 
@@ -14,10 +17,39 @@ struct RowData {
 }
 
 struct AppState {
-    service: DuckDBService,
+    sender: Sender<UiMessage>,
     current_file: RefCell<Option<PathBuf>>,
     selected_columns: RefCell<Vec<String>>,
     offset: Cell<u64>,
+    next_job_id: Cell<u64>,
+    metadata_job_id: Cell<u64>,
+    query_job_id: Cell<u64>,
+    export_job_id: Cell<u64>,
+}
+
+impl AppState {
+    fn next_job_id(&self) -> u64 {
+        let job_id = self.next_job_id.get().saturating_add(1);
+        self.next_job_id.set(job_id);
+        job_id
+    }
+}
+
+enum UiMessage {
+    MetadataLoaded {
+        job_id: u64,
+        path: PathBuf,
+        result: Result<ParquetMetadata, String>,
+    },
+    PageLoaded {
+        job_id: u64,
+        offset: u64,
+        result: Result<QueryPage, String>,
+    },
+    ExportFinished {
+        job_id: u64,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Clone)]
@@ -26,6 +58,7 @@ struct Widgets {
     metadata_label: gtk::Label,
     columns_box: gtk::Box,
     filter_entry: gtk::Entry,
+    apply_filter_button: gtk::Button,
     prev_button: gtk::Button,
     next_button: gtk::Button,
     page_label: gtk::Label,
@@ -36,18 +69,22 @@ struct Widgets {
 }
 
 pub fn build_ui(app: &gtk::Application) {
-    let state = match DuckDBService::new() {
-        Ok(service) => Rc::new(AppState {
-            service,
-            current_file: RefCell::new(None),
-            selected_columns: RefCell::new(Vec::new()),
-            offset: Cell::new(0),
-        }),
-        Err(err) => {
-            show_startup_error(app, &format!("Failed to start DuckDB: {err}"));
-            return;
-        }
-    };
+    if let Err(err) = DuckDBService::new() {
+        show_startup_error(app, &format!("Failed to start DuckDB: {err}"));
+        return;
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    let state = Rc::new(AppState {
+        sender,
+        current_file: RefCell::new(None),
+        selected_columns: RefCell::new(Vec::new()),
+        offset: Cell::new(0),
+        next_job_id: Cell::new(0),
+        metadata_job_id: Cell::new(0),
+        query_job_id: Cell::new(0),
+        export_job_id: Cell::new(0),
+    });
 
     let window = gtk::ApplicationWindow::builder()
         .application(app)
@@ -196,6 +233,7 @@ pub fn build_ui(app: &gtk::Application) {
         metadata_label,
         columns_box,
         filter_entry,
+        apply_filter_button: apply_filter_button.clone(),
         prev_button,
         next_button,
         page_label,
@@ -208,6 +246,7 @@ pub fn build_ui(app: &gtk::Application) {
     connect_handlers(
         &widgets,
         state,
+        receiver,
         open_button,
         apply_filter_button,
         export_csv_button,
@@ -219,11 +258,14 @@ pub fn build_ui(app: &gtk::Application) {
 fn connect_handlers(
     widgets: &Widgets,
     state: Rc<AppState>,
+    receiver: Receiver<UiMessage>,
     open_button: gtk::Button,
     apply_filter_button: gtk::Button,
     export_csv_button: gtk::Button,
     export_parquet_button: gtk::Button,
 ) {
+    install_message_pump(widgets, state.clone(), receiver);
+
     let open_widgets = widgets.clone();
     let open_state = state.clone();
     open_button.connect_clicked(move |_| {
@@ -282,23 +324,28 @@ fn connect_handlers(
 
 fn load_file(widgets: &Widgets, state: Rc<AppState>, path: PathBuf) {
     state.current_file.replace(Some(path.clone()));
+    state.selected_columns.replace(Vec::new());
     state.offset.set(0);
+    clear_column_picker(widgets);
+    clear_row_details(widgets);
+    set_query_controls_sensitive(widgets, false);
+    widgets
+        .metadata_label
+        .set_label("Loading Parquet metadata...");
+    set_status(widgets, "Loading metadata in background...");
 
-    match state.service.get_metadata(&path) {
-        Ok(metadata) => {
-            state.selected_columns.replace(
-                metadata
-                    .columns
-                    .iter()
-                    .map(|column| column.name.clone())
-                    .collect(),
-            );
-            render_metadata(widgets, &path, &metadata);
-            render_column_picker(widgets, state.clone(), &metadata);
-            refresh_page(widgets, &state);
-        }
-        Err(err) => set_status(widgets, &format!("Failed to read metadata: {err}")),
-    }
+    let job_id = state.next_job_id();
+    state.metadata_job_id.set(job_id);
+    state.query_job_id.set(job_id);
+    let sender = state.sender.clone();
+    thread::spawn(move || {
+        let result = with_service(|service| service.get_metadata(&path));
+        let _ = sender.send(UiMessage::MetadataLoaded {
+            job_id,
+            path,
+            result,
+        });
+    });
 }
 
 fn refresh_page(widgets: &Widgets, state: &AppState) {
@@ -309,27 +356,118 @@ fn refresh_page(widgets: &Widgets, state: &AppState) {
 
     let columns = state.selected_columns.borrow().clone();
     let where_clause = widgets.filter_entry.text().to_string();
-    match state.service.query_page(
-        &path,
-        PAGE_SIZE,
-        state.offset.get(),
-        &columns,
-        &where_clause,
-    ) {
-        Ok(page) => {
-            render_table(widgets, page.clone());
-            let page_number = state.offset.get() / PAGE_SIZE + 1;
-            widgets.page_label.set_label(&format!("Page {page_number}"));
-            widgets.prev_button.set_sensitive(state.offset.get() > 0);
-            widgets
-                .next_button
-                .set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
-            set_status(
-                widgets,
-                &format!("{} rows loaded on this page.", page.rows.len()),
-            );
+    let offset = state.offset.get();
+    let job_id = state.next_job_id();
+    state.query_job_id.set(job_id);
+    set_query_controls_sensitive(widgets, false);
+    clear_row_details(widgets);
+    set_status(widgets, "Running query in background...");
+
+    let sender = state.sender.clone();
+    thread::spawn(move || {
+        let result = with_service(|service| {
+            service.query_page(&path, PAGE_SIZE, offset, &columns, &where_clause)
+        });
+        let _ = sender.send(UiMessage::PageLoaded {
+            job_id,
+            offset,
+            result,
+        });
+    });
+}
+
+fn install_message_pump(widgets: &Widgets, state: Rc<AppState>, receiver: Receiver<UiMessage>) {
+    let widgets = widgets.clone();
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        loop {
+            match receiver.try_recv() {
+                Ok(message) => handle_ui_message(&widgets, &state, message),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
+            }
         }
-        Err(err) => set_status(widgets, &format!("Query failed: {err}")),
+
+        glib::ControlFlow::Continue
+    });
+}
+
+fn handle_ui_message(widgets: &Widgets, state: &Rc<AppState>, message: UiMessage) {
+    match message {
+        UiMessage::MetadataLoaded {
+            job_id,
+            path,
+            result,
+        } => {
+            if state.metadata_job_id.get() != job_id {
+                return;
+            }
+
+            match result {
+                Ok(metadata) => {
+                    state.selected_columns.replace(
+                        metadata
+                            .columns
+                            .iter()
+                            .map(|column| column.name.clone())
+                            .collect(),
+                    );
+                    render_metadata(widgets, &path, &metadata);
+                    render_column_picker(widgets, state.clone(), &metadata);
+                    refresh_page(widgets, state);
+                }
+                Err(err) => {
+                    widgets.filter_entry.set_sensitive(true);
+                    widgets.apply_filter_button.set_sensitive(true);
+                    widgets.prev_button.set_sensitive(false);
+                    widgets.next_button.set_sensitive(false);
+                    set_status(widgets, &format!("Failed to read metadata: {err}"));
+                }
+            }
+        }
+        UiMessage::PageLoaded {
+            job_id,
+            offset,
+            result,
+        } => {
+            if state.query_job_id.get() != job_id {
+                return;
+            }
+
+            match result {
+                Ok(page) => {
+                    render_table(widgets, page.clone());
+                    let page_number = offset / PAGE_SIZE + 1;
+                    widgets.page_label.set_label(&format!("Page {page_number}"));
+                    widgets.filter_entry.set_sensitive(true);
+                    widgets.apply_filter_button.set_sensitive(true);
+                    widgets.prev_button.set_sensitive(offset > 0);
+                    widgets
+                        .next_button
+                        .set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
+                    set_status(
+                        widgets,
+                        &format!("{} rows loaded on this page.", page.rows.len()),
+                    );
+                }
+                Err(err) => {
+                    widgets.filter_entry.set_sensitive(true);
+                    widgets.apply_filter_button.set_sensitive(true);
+                    widgets.prev_button.set_sensitive(offset > 0);
+                    widgets.next_button.set_sensitive(false);
+                    set_status(widgets, &format!("Query failed: {err}"));
+                }
+            }
+        }
+        UiMessage::ExportFinished { job_id, result } => {
+            if state.export_job_id.get() != job_id {
+                return;
+            }
+
+            match result {
+                Ok(()) => set_status(widgets, "Export completed."),
+                Err(err) => set_status(widgets, &format!("Export failed: {err}")),
+            }
+        }
     }
 }
 
@@ -354,9 +492,7 @@ fn render_metadata(widgets: &Widgets, path: &Path, metadata: &ParquetMetadata) {
 }
 
 fn render_column_picker(widgets: &Widgets, state: Rc<AppState>, metadata: &ParquetMetadata) {
-    while let Some(child) = widgets.columns_box.first_child() {
-        widgets.columns_box.remove(&child);
-    }
+    clear_column_picker(widgets);
 
     for column in &metadata.columns {
         let check = gtk::CheckButton::with_label(&format!("{}: {}", column.name, column.data_type));
@@ -510,6 +646,12 @@ fn clear_row_details(widgets: &Widgets) {
     }
 }
 
+fn clear_column_picker(widgets: &Widgets) {
+    while let Some(child) = widgets.columns_box.first_child() {
+        widgets.columns_box.remove(&child);
+    }
+}
+
 fn open_file_dialog<F>(window: &gtk::ApplicationWindow, on_file: F)
 where
     F: Fn(PathBuf) + 'static,
@@ -561,16 +703,24 @@ fn export_dialog(widgets: &Widgets, state: Rc<AppState>, format: ExportFormat) {
             if let Some(output_path) = dialog.file().and_then(|file| file.path()) {
                 let selected_columns = state.selected_columns.borrow().clone();
                 let where_clause = export_widgets.filter_entry.text().to_string();
-                match state.service.export_result(
-                    &source_path,
-                    &output_path,
-                    &selected_columns,
-                    &where_clause,
-                    format,
-                ) {
-                    Ok(()) => set_status(&export_widgets, "Export completed."),
-                    Err(err) => set_status(&export_widgets, &format!("Export failed: {err}")),
-                }
+                let job_id = state.next_job_id();
+                state.export_job_id.set(job_id);
+                set_status(&export_widgets, "Exporting in background...");
+
+                let sender = state.sender.clone();
+                let source_path = source_path.clone();
+                thread::spawn(move || {
+                    let result = with_service(|service| {
+                        service.export_result(
+                            &source_path,
+                            &output_path,
+                            &selected_columns,
+                            &where_clause,
+                            format,
+                        )
+                    });
+                    let _ = sender.send(UiMessage::ExportFinished { job_id, result });
+                });
             }
         }
         dialog.destroy();
@@ -588,6 +738,20 @@ fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
 
 fn set_status(widgets: &Widgets, message: &str) {
     widgets.status_label.set_label(message);
+}
+
+fn set_query_controls_sensitive(widgets: &Widgets, sensitive: bool) {
+    widgets.filter_entry.set_sensitive(sensitive);
+    widgets.apply_filter_button.set_sensitive(sensitive);
+    widgets.prev_button.set_sensitive(sensitive);
+    widgets.next_button.set_sensitive(sensitive);
+}
+
+fn with_service<T>(
+    operation: impl FnOnce(&DuckDBService) -> Result<T, String>,
+) -> Result<T, String> {
+    let service = DuckDBService::new()?;
+    operation(&service)
 }
 
 fn human_size(bytes: u64) -> String {
