@@ -58,9 +58,32 @@ jobs:
               echo "tag=v$version"
           } >> "$GITHUB_OUTPUT"
 
+  ci:
+    name: CI gate
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang gcc g++ libgtk-4-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Check project
+        run: cargo check --locked
+
   build-binary:
     name: Build release binary
-    needs: version
+    needs: [version, ci]
     if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
