@@ -22,6 +22,17 @@ pub struct QueryPage {
     pub rows: Vec<Vec<String>>,
 }
 
+#[derive(Clone, Debug)]
+pub enum QueryInput {
+    Filter {
+        selected_columns: Vec<String>,
+        where_clause: String,
+    },
+    Advanced {
+        sql: String,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExportFormat {
     Csv,
@@ -77,64 +88,88 @@ impl DuckDBService {
         path: &Path,
         limit: u64,
         offset: u64,
-        selected_columns: &[String],
-        where_clause: &str,
+        input: &QueryInput,
     ) -> Result<QueryPage, String> {
-        let columns = self.preview_columns(path, selected_columns)?;
-        let projected_columns = preview_projection(&columns);
-        let filter = normalize_where_clause(where_clause)?;
-        let sql = format!(
-            "SELECT {projected_columns} FROM read_parquet({}) {filter} LIMIT ? OFFSET ?",
-            sql_string(path)
-        );
+        let (columns, sql, params) = match input {
+            QueryInput::Filter {
+                selected_columns,
+                where_clause,
+            } => {
+                let columns = self.preview_columns(path, selected_columns)?;
+                let projected_columns = preview_projection(&columns);
+                let filter = normalize_where_clause(where_clause)?;
+                let sql = format!(
+                    "SELECT {projected_columns} FROM read_parquet({}) {filter} LIMIT ? OFFSET ?",
+                    sql_string(path)
+                );
+                (columns, sql, Some((limit as i64, offset as i64)))
+            }
+            QueryInput::Advanced { sql } => {
+                let sql = advanced_sql(path, sql)?;
+                let columns = self.query_columns(&sql)?;
+                let sql = format!(
+                    "SELECT {} FROM ({sql}) AS parquetta_query",
+                    preview_projection(&columns)
+                );
+                (columns, sql, None)
+            }
+        };
 
         let mut stmt = self.conn.prepare(&sql).map_err(|err| err.to_string())?;
         let column_count = columns.len();
 
-        let rows = stmt
-            .query_map(params![limit as i64, offset as i64], |row| {
-                let mut values = Vec::with_capacity(column_count);
-                for index in 0..column_count {
-                    values.push(cell_to_string(row, index));
-                }
-                Ok(values)
-            })
-            .map_err(|err| err.to_string())?;
-
-        Ok(QueryPage {
-            columns,
-            rows: rows
+        let rows = match params {
+            Some((limit, offset)) => stmt
+                .query_map(params![limit, offset], |row| row_values(row, column_count))
+                .map_err(|err| err.to_string())?
                 .collect::<DuckResult<Vec<_>>>()
                 .map_err(|err| err.to_string())?,
-        })
+            None => stmt
+                .query_map([], |row| row_values(row, column_count))
+                .map_err(|err| err.to_string())?
+                .collect::<DuckResult<Vec<_>>>()
+                .map_err(|err| err.to_string())?,
+        };
+
+        Ok(QueryPage { columns, rows })
     }
 
     pub fn export_result(
         &self,
         source_path: &Path,
         output_path: &Path,
-        selected_columns: &[String],
-        where_clause: &str,
+        input: &QueryInput,
         format: ExportFormat,
     ) -> Result<(), String> {
-        let projected_columns = if selected_columns.is_empty() {
-            "*".to_string()
-        } else {
-            selected_columns
-                .iter()
-                .map(|column| quote_identifier(column))
-                .collect::<Vec<_>>()
-                .join(", ")
+        let query_sql = match input {
+            QueryInput::Filter {
+                selected_columns,
+                where_clause,
+            } => {
+                let projected_columns = if selected_columns.is_empty() {
+                    "*".to_string()
+                } else {
+                    selected_columns
+                        .iter()
+                        .map(|column| quote_identifier(column))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let filter = normalize_where_clause(where_clause)?;
+                format!(
+                    "SELECT {projected_columns} FROM read_parquet({}) {filter}",
+                    sql_string(source_path)
+                )
+            }
+            QueryInput::Advanced { sql } => advanced_sql(source_path, sql)?,
         };
-        let filter = normalize_where_clause(where_clause)?;
         let copy_options = match format {
             ExportFormat::Csv => "(FORMAT CSV, HEADER TRUE)",
             ExportFormat::Parquet => "(FORMAT PARQUET)",
         };
 
         let sql = format!(
-            "COPY (SELECT {projected_columns} FROM read_parquet({}) {filter}) TO {} {copy_options}",
-            sql_string(source_path),
+            "COPY ({query_sql}) TO {} {copy_options}",
             sql_string(output_path)
         );
         self.conn
@@ -164,6 +199,26 @@ impl DuckDBService {
         Ok(columns)
     }
 
+    fn query_columns(&self, sql: &str) -> Result<Vec<String>, String> {
+        let describe_sql = format!("DESCRIBE {sql}");
+        let mut stmt = self
+            .conn
+            .prepare(&describe_sql)
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|err| err.to_string())?;
+        let columns = rows
+            .collect::<DuckResult<Vec<_>>>()
+            .map_err(|err| err.to_string())?;
+
+        if columns.is_empty() {
+            return Err("Advanced query did not return any columns".to_string());
+        }
+
+        Ok(columns)
+    }
+
     fn count_rows(&self, path: &Path) -> DuckResult<u64> {
         let sql = format!("SELECT count(*) FROM read_parquet({})", sql_string(path));
         self.conn.query_row(&sql, [], |row| row.get::<_, u64>(0))
@@ -183,6 +238,14 @@ fn cell_to_string(row: &duckdb::Row<'_>, index: usize) -> String {
         .ok()
         .flatten()
         .unwrap_or_else(|| "NULL".to_string())
+}
+
+fn row_values(row: &duckdb::Row<'_>, column_count: usize) -> DuckResult<Vec<String>> {
+    let mut values = Vec::with_capacity(column_count);
+    for index in 0..column_count {
+        values.push(cell_to_string(row, index));
+    }
+    Ok(values)
 }
 
 fn normalize_where_clause(input: &str) -> Result<String, String> {
@@ -216,6 +279,18 @@ fn preview_projection(columns: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn advanced_sql(path: &Path, input: &str) -> Result<String, String> {
+    let trimmed = input.trim().trim_end_matches(';').trim();
+    if trimmed.is_empty() {
+        return Err("Advanced query cannot be empty".to_string());
+    }
+    if !trimmed.contains("{{file}}") {
+        return Err("Advanced query must include the {{file}} placeholder".to_string());
+    }
+
+    Ok(trimmed.replace("{{file}}", &format!("read_parquet({})", sql_string(path))))
 }
 
 fn sql_string(path: &Path) -> String {

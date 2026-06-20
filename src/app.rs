@@ -1,4 +1,4 @@
-use crate::duckdb_service::{DuckDBService, ExportFormat, ParquetMetadata, QueryPage};
+use crate::duckdb_service::{DuckDBService, ExportFormat, ParquetMetadata, QueryInput, QueryPage};
 use gio::prelude::*;
 use glib::BoxedAnyObject;
 use gtk::prelude::*;
@@ -44,6 +44,7 @@ enum UiMessage {
     PageLoaded {
         job_id: u64,
         offset: u64,
+        advanced: bool,
         result: Result<QueryPage, String>,
     },
     ExportFinished {
@@ -58,6 +59,7 @@ struct Widgets {
     metadata_label: gtk::Label,
     columns_box: gtk::Box,
     filter_entry: gtk::Entry,
+    advanced_toggle: gtk::CheckButton,
     apply_filter_button: gtk::Button,
     prev_button: gtk::Button,
     next_button: gtk::Button,
@@ -103,6 +105,7 @@ pub fn build_ui(app: &gtk::Application) {
         .width_chars(44)
         .placeholder_text("WHERE age > 30")
         .build();
+    let advanced_toggle = gtk::CheckButton::with_label("Advanced");
     let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
     header.pack_start(&open_button);
     header.pack_end(&export_parquet_button);
@@ -197,6 +200,7 @@ pub fn build_ui(app: &gtk::Application) {
     filter_bar.set_margin_bottom(8);
     filter_bar.set_margin_start(12);
     filter_bar.set_margin_end(12);
+    filter_bar.append(&advanced_toggle);
     filter_bar.append(&filter_entry);
     filter_bar.append(&apply_filter_button);
 
@@ -233,6 +237,7 @@ pub fn build_ui(app: &gtk::Application) {
         metadata_label,
         columns_box,
         filter_entry,
+        advanced_toggle,
         apply_filter_button: apply_filter_button.clone(),
         prev_button,
         next_button,
@@ -288,6 +293,26 @@ fn connect_handlers(
     widgets.filter_entry.connect_activate(move |_| {
         filter_state.offset.set(0);
         refresh_page(&filter_widgets, &filter_state);
+    });
+
+    let advanced_widgets = widgets.clone();
+    let advanced_state = state.clone();
+    widgets.advanced_toggle.connect_toggled(move |toggle| {
+        advanced_state.offset.set(0);
+        advanced_widgets
+            .columns_box
+            .set_sensitive(!toggle.is_active());
+        if toggle.is_active() {
+            advanced_widgets
+                .filter_entry
+                .set_placeholder_text(Some("SELECT * FROM {{file}} LIMIT 1000"));
+            advanced_widgets.prev_button.set_sensitive(false);
+            advanced_widgets.next_button.set_sensitive(false);
+        } else {
+            advanced_widgets
+                .filter_entry
+                .set_placeholder_text(Some("WHERE age > 30"));
+        }
     });
 
     let prev_widgets = widgets.clone();
@@ -354,9 +379,9 @@ fn refresh_page(widgets: &Widgets, state: &AppState) {
         return;
     };
 
-    let columns = state.selected_columns.borrow().clone();
-    let where_clause = widgets.filter_entry.text().to_string();
+    let input = query_input(widgets, state);
     let offset = state.offset.get();
+    let advanced = widgets.advanced_toggle.is_active();
     let job_id = state.next_job_id();
     state.query_job_id.set(job_id);
     set_query_controls_sensitive(widgets, false);
@@ -365,12 +390,11 @@ fn refresh_page(widgets: &Widgets, state: &AppState) {
 
     let sender = state.sender.clone();
     thread::spawn(move || {
-        let result = with_service(|service| {
-            service.query_page(&path, PAGE_SIZE, offset, &columns, &where_clause)
-        });
+        let result = with_service(|service| service.query_page(&path, PAGE_SIZE, offset, &input));
         let _ = sender.send(UiMessage::PageLoaded {
             job_id,
             offset,
+            advanced,
             result,
         });
     });
@@ -417,6 +441,7 @@ fn handle_ui_message(widgets: &Widgets, state: &Rc<AppState>, message: UiMessage
                 }
                 Err(err) => {
                     widgets.filter_entry.set_sensitive(true);
+                    widgets.advanced_toggle.set_sensitive(true);
                     widgets.apply_filter_button.set_sensitive(true);
                     widgets.prev_button.set_sensitive(false);
                     widgets.next_button.set_sensitive(false);
@@ -427,6 +452,7 @@ fn handle_ui_message(widgets: &Widgets, state: &Rc<AppState>, message: UiMessage
         UiMessage::PageLoaded {
             job_id,
             offset,
+            advanced,
             result,
         } => {
             if state.query_job_id.get() != job_id {
@@ -436,14 +462,21 @@ fn handle_ui_message(widgets: &Widgets, state: &Rc<AppState>, message: UiMessage
             match result {
                 Ok(page) => {
                     render_table(widgets, page.clone());
-                    let page_number = offset / PAGE_SIZE + 1;
-                    widgets.page_label.set_label(&format!("Page {page_number}"));
                     widgets.filter_entry.set_sensitive(true);
+                    widgets.advanced_toggle.set_sensitive(true);
                     widgets.apply_filter_button.set_sensitive(true);
-                    widgets.prev_button.set_sensitive(offset > 0);
-                    widgets
-                        .next_button
-                        .set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
+                    if advanced {
+                        widgets.page_label.set_label("Advanced query");
+                        widgets.prev_button.set_sensitive(false);
+                        widgets.next_button.set_sensitive(false);
+                    } else {
+                        let page_number = offset / PAGE_SIZE + 1;
+                        widgets.page_label.set_label(&format!("Page {page_number}"));
+                        widgets.prev_button.set_sensitive(offset > 0);
+                        widgets
+                            .next_button
+                            .set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
+                    }
                     set_status(
                         widgets,
                         &format!("{} rows loaded on this page.", page.rows.len()),
@@ -451,8 +484,9 @@ fn handle_ui_message(widgets: &Widgets, state: &Rc<AppState>, message: UiMessage
                 }
                 Err(err) => {
                     widgets.filter_entry.set_sensitive(true);
+                    widgets.advanced_toggle.set_sensitive(true);
                     widgets.apply_filter_button.set_sensitive(true);
-                    widgets.prev_button.set_sensitive(offset > 0);
+                    widgets.prev_button.set_sensitive(!advanced && offset > 0);
                     widgets.next_button.set_sensitive(false);
                     set_status(widgets, &format!("Query failed: {err}"));
                 }
@@ -701,8 +735,7 @@ fn export_dialog(widgets: &Widgets, state: Rc<AppState>, format: ExportFormat) {
     dialog.connect_response(move |dialog, response| {
         if response == gtk::ResponseType::Accept {
             if let Some(output_path) = dialog.file().and_then(|file| file.path()) {
-                let selected_columns = state.selected_columns.borrow().clone();
-                let where_clause = export_widgets.filter_entry.text().to_string();
+                let input = query_input(&export_widgets, &state);
                 let job_id = state.next_job_id();
                 state.export_job_id.set(job_id);
                 set_status(&export_widgets, "Exporting in background...");
@@ -711,13 +744,7 @@ fn export_dialog(widgets: &Widgets, state: Rc<AppState>, format: ExportFormat) {
                 let source_path = source_path.clone();
                 thread::spawn(move || {
                     let result = with_service(|service| {
-                        service.export_result(
-                            &source_path,
-                            &output_path,
-                            &selected_columns,
-                            &where_clause,
-                            format,
-                        )
+                        service.export_result(&source_path, &output_path, &input, format)
                     });
                     let _ = sender.send(UiMessage::ExportFinished { job_id, result });
                 });
@@ -742,9 +769,23 @@ fn set_status(widgets: &Widgets, message: &str) {
 
 fn set_query_controls_sensitive(widgets: &Widgets, sensitive: bool) {
     widgets.filter_entry.set_sensitive(sensitive);
+    widgets.advanced_toggle.set_sensitive(sensitive);
     widgets.apply_filter_button.set_sensitive(sensitive);
     widgets.prev_button.set_sensitive(sensitive);
     widgets.next_button.set_sensitive(sensitive);
+}
+
+fn query_input(widgets: &Widgets, state: &AppState) -> QueryInput {
+    if widgets.advanced_toggle.is_active() {
+        QueryInput::Advanced {
+            sql: widgets.filter_entry.text().to_string(),
+        }
+    } else {
+        QueryInput::Filter {
+            selected_columns: state.selected_columns.borrow().clone(),
+            where_clause: widgets.filter_entry.text().to_string(),
+        }
+    }
 }
 
 fn with_service<T>(
