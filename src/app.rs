@@ -152,6 +152,7 @@ pub fn build_ui(app: &gtk::Application) {
         .show_row_separators(true)
         .build();
     let table_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Automatic)
         .hexpand(true)
         .vexpand(true)
         .child(&table)
@@ -636,7 +637,7 @@ fn render_table(widgets: &Widgets, page: QueryPage) {
                 .factory(&factory)
                 .fixed_width(initial_column_width)
                 .resizable(true)
-                .expand(true)
+                .expand(false)
                 .build(),
         );
     }
