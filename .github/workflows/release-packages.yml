@@ -58,8 +58,8 @@ jobs:
               echo "tag=v$version"
           } >> "$GITHUB_OUTPUT"
 
-  deb:
-    name: Build .deb
+  build-binary:
+    name: Build release binary
     needs: version
     if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
@@ -73,11 +73,40 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb --locked
-
       - name: Build release binary
         run: cargo build --release --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binary
+          path: target/release/parquetta
+          if-no-files-found: error
+
+  deb:
+    name: Build .deb
+    needs: [version, build-binary]
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang gcc g++ libgtk-4-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binary
+          path: target/release
+
+      - name: Prepare binary artifact
+        run: chmod +x target/release/parquetta
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
 
       - name: Build Debian package
         run: |
@@ -92,7 +121,7 @@ jobs:
 
   rpm:
     name: Build .rpm
-    needs: version
+    needs: [version, build-binary]
     if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     container: fedora:43
@@ -101,13 +130,18 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          dnf install -y cargo clang gcc gcc-c++ gtk4-devel make pkgconf-pkg-config rpm-build rust
+          dnf install -y cargo gcc make rpm-build rust
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binary
+          path: target/release
+
+      - name: Prepare binary artifact
+        run: chmod +x target/release/parquetta
 
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked
-
-      - name: Build release binary
-        run: cargo build --release --locked
 
       - name: Build RPM package
         run: |
@@ -122,7 +156,7 @@ jobs:
 
   flatpak:
     name: Build Flatpak
-    needs: version
+    needs: [version, build-binary]
     if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -131,12 +165,15 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang flatpak flatpak-builder g++ gcc libgtk-4-dev pkg-config
+          sudo apt-get install -y flatpak flatpak-builder
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binary
+          path: target/release
 
-      - name: Build release binary
-        run: cargo build --release --locked
+      - name: Prepare binary artifact
+        run: chmod +x target/release/parquetta
 
       - name: Install GNOME Flatpak runtime
         run: |
@@ -181,6 +218,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: "*-package"
           path: dist
           merge-multiple: true
 
