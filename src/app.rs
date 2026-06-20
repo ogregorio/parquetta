@@ -66,17 +66,7 @@ pub fn build_ui(app: &gtk::Application) {
         .width_chars(44)
         .placeholder_text("WHERE age > 30")
         .build();
-    let filter_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    filter_box.set_hexpand(true);
-    filter_box.set_margin_top(6);
-    filter_box.set_margin_bottom(6);
-    filter_box.append(&filter_entry);
-    filter_box.append(&apply_filter_button);
-
-    let header = gtk::HeaderBar::builder()
-        .show_title_buttons(true)
-        .title_widget(&filter_box)
-        .build();
+    let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
     header.pack_start(&open_button);
     header.pack_end(&export_parquet_button);
     header.pack_end(&export_csv_button);
@@ -124,6 +114,7 @@ pub fn build_ui(app: &gtk::Application) {
         .build();
 
     let row_details_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    row_details_box.set_size_request(320, -1);
     row_details_box.set_margin_top(12);
     row_details_box.set_margin_bottom(12);
     row_details_box.set_margin_start(12);
@@ -131,6 +122,7 @@ pub fn build_ui(app: &gtk::Application) {
 
     let row_details_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .max_content_width(360)
         .min_content_width(320)
         .hexpand(false)
         .vexpand(true)
@@ -163,6 +155,14 @@ pub fn build_ui(app: &gtk::Application) {
     pager.append(&page_label);
     pager.append(&status_label);
 
+    let filter_bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    filter_bar.set_margin_top(8);
+    filter_bar.set_margin_bottom(8);
+    filter_bar.set_margin_start(12);
+    filter_bar.set_margin_end(12);
+    filter_bar.append(&filter_entry);
+    filter_bar.append(&apply_filter_button);
+
     let preview = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
         .start_child(&table_scroll)
@@ -187,6 +187,7 @@ pub fn build_ui(app: &gtk::Application) {
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.append(&content);
+    root.append(&filter_bar);
     root.append(&pager);
     window.set_child(Some(&root));
 
@@ -471,15 +472,31 @@ fn render_row_details(widgets: &Widgets, columns: &[String], values: &[String]) 
             .build();
         name.add_css_class("dim-label");
 
+        let value_text = values.get(index).cloned().unwrap_or_default();
         let value = gtk::Label::builder()
             .xalign(0.0)
+            .max_width_chars(42)
             .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::Char)
             .selectable(true)
-            .label(values.get(index).map(String::as_str).unwrap_or(""))
+            .label(&value_text)
             .build();
+        value.set_hexpand(true);
+
+        let copy_button = icon_button("edit-copy-symbolic", "Copy value");
+        copy_button.add_css_class("flat");
+        copy_button.set_valign(gtk::Align::Start);
+        copy_button.connect_clicked(move |button| {
+            button.clipboard().set_text(&value_text);
+        });
+
+        let value_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        value_row.set_hexpand(true);
+        value_row.append(&value);
+        value_row.append(&copy_button);
 
         field.append(&name);
-        field.append(&value);
+        field.append(&value_row);
         widgets.row_details_box.append(&field);
     }
 
