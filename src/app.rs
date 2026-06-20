@@ -154,17 +154,11 @@ pub fn build_ui(app: &gtk::Application) {
         .build();
 
     let row_details_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    row_details_box.set_size_request(320, -1);
-    row_details_box.set_margin_top(12);
-    row_details_box.set_margin_bottom(12);
-    row_details_box.set_margin_start(12);
-    row_details_box.set_margin_end(12);
 
     let row_details_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .max_content_width(360)
         .min_content_width(320)
-        .hexpand(false)
         .vexpand(true)
         .child(&row_details_box)
         .build();
@@ -172,9 +166,19 @@ pub fn build_ui(app: &gtk::Application) {
     let row_details_revealer = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideLeft)
         .transition_duration(180)
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::Fill)
         .reveal_child(false)
         .child(&row_details_scroll)
         .build();
+    row_details_revealer.set_size_request(360, -1);
+
+    let row_details_overlay = gtk::Overlay::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .child(&table_scroll)
+        .build();
+    row_details_overlay.add_overlay(&row_details_revealer);
 
     let prev_button = gtk::Button::with_label("Previous");
     let next_button = gtk::Button::with_label("Next");
@@ -204,27 +208,16 @@ pub fn build_ui(app: &gtk::Application) {
     filter_bar.append(&filter_entry);
     filter_bar.append(&apply_filter_button);
 
-    let preview = gtk::Paned::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .start_child(&table_scroll)
-        .resize_start_child(true)
-        .shrink_start_child(false)
-        .end_child(&row_details_revealer)
-        .resize_end_child(false)
-        .shrink_end_child(false)
-        .build();
-
     let content = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
         .start_child(&sidebar)
         .resize_start_child(false)
         .shrink_start_child(false)
-        .end_child(&preview)
+        .end_child(&row_details_overlay)
         .resize_end_child(true)
         .shrink_end_child(false)
         .build();
     content.set_position(320);
-    preview.set_position(900);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.append(&content);
@@ -624,15 +617,32 @@ fn render_row_details(widgets: &Widgets, columns: &[String], values: &[String]) 
         widgets.row_details_box.remove(&child);
     }
 
+    let close_button = icon_button("window-close-symbolic", "Close details");
+    close_button.add_css_class("flat");
+    let close_widgets = widgets.clone();
+    close_button.connect_clicked(move |_| {
+        clear_row_details(&close_widgets);
+    });
+
     let title = gtk::Label::builder()
         .xalign(0.0)
+        .hexpand(true)
         .label("Row details")
         .build();
     title.add_css_class("heading");
-    widgets.row_details_box.append(&title);
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header.set_margin_top(12);
+    header.set_margin_start(12);
+    header.set_margin_end(12);
+    header.append(&title);
+    header.append(&close_button);
+    widgets.row_details_box.append(&header);
 
     for (index, column) in columns.iter().enumerate() {
         let field = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        field.set_margin_start(12);
+        field.set_margin_end(12);
         field.set_margin_bottom(8);
 
         let name = gtk::Label::builder()
