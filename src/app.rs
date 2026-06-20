@@ -1,17 +1,15 @@
-use crate::duckdb_service::{DuckDBService, ExportFormat, ParquetMetadata, QueryInput, QueryPage};
 use gio::prelude::*;
 use glib::BoxedAnyObject;
 use gtk::prelude::*;
+use parquetta::duckdb_service::{DuckDBService, ParquetMetadata, QueryPage};
+use parquetta::formatting::{human_size, initial_column_width, PAGE_SIZE};
+use parquetta::query::{ExportFormat, QueryInput};
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::Duration;
-
-const PAGE_SIZE: u64 = 1000;
-const MIN_INITIAL_COLUMN_WIDTH: i32 = 140;
-const FALLBACK_TABLE_WIDTH: i32 = 960;
 
 #[derive(Clone, Debug)]
 struct RowData {
@@ -100,6 +98,7 @@ pub fn build_ui(app: &gtk::Application) {
         .build();
 
     let open_button = icon_button("document-open-symbolic", "Open Parquet");
+    let info_button = icon_button("dialog-information-symbolic", "About Parquetta");
     let export_csv_button = icon_button("document-save-symbolic", "Export CSV");
     let export_parquet_button = icon_button("drive-harddisk-symbolic", "Export Parquet");
     let apply_filter_button = icon_button("system-search-symbolic", "Apply filter");
@@ -112,6 +111,7 @@ pub fn build_ui(app: &gtk::Application) {
     let advanced_toggle = gtk::CheckButton::with_label("Advanced");
     let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
     header.pack_start(&open_button);
+    header.pack_end(&info_button);
     header.pack_end(&export_parquet_button);
     header.pack_end(&export_csv_button);
     window.set_titlebar(Some(&header));
@@ -252,6 +252,7 @@ pub fn build_ui(app: &gtk::Application) {
         state,
         receiver,
         open_button,
+        info_button,
         apply_filter_button,
         export_csv_button,
         export_parquet_button,
@@ -286,6 +287,7 @@ fn connect_handlers(
     state: Rc<AppState>,
     receiver: Receiver<UiMessage>,
     open_button: gtk::Button,
+    info_button: gtk::Button,
     apply_filter_button: gtk::Button,
     export_csv_button: gtk::Button,
     export_parquet_button: gtk::Button,
@@ -300,6 +302,11 @@ fn connect_handlers(
             let state = open_state.clone();
             move |path| load_file(&widgets, state.clone(), path)
         });
+    });
+
+    let info_window = widgets.window.clone();
+    info_button.connect_clicked(move |_| {
+        show_info_dialog(&info_window);
     });
 
     let apply_widgets = widgets.clone();
@@ -644,10 +651,7 @@ fn render_table(widgets: &Widgets, page: QueryPage) {
 }
 
 fn initial_table_column_width(widgets: &Widgets, column_count: usize) -> i32 {
-    let column_count = i32::try_from(column_count).unwrap_or(i32::MAX).max(1);
-    let table_width = widgets.table.allocated_width().max(FALLBACK_TABLE_WIDTH);
-
-    (table_width / column_count).max(MIN_INITIAL_COLUMN_WIDTH)
+    initial_column_width(widgets.table.allocated_width(), column_count)
 }
 
 fn render_row_details(widgets: &Widgets, columns: &[String], values: &[String]) {
@@ -811,6 +815,86 @@ fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
         .build()
 }
 
+fn show_info_dialog(window: &gtk::ApplicationWindow) {
+    let dialog = gtk::Dialog::builder()
+        .title("About Parquetta")
+        .transient_for(window)
+        .modal(true)
+        .default_width(420)
+        .build();
+    dialog.add_button("Close", gtk::ResponseType::Close);
+
+    let content = dialog.content_area();
+    content.set_spacing(16);
+    content.set_margin_top(24);
+    content.set_margin_bottom(18);
+    content.set_margin_start(24);
+    content.set_margin_end(24);
+
+    let icon = gtk::Image::from_icon_name("dev.parquetta.Parquetta");
+    icon.set_pixel_size(96);
+    content.append(&icon);
+
+    let title = gtk::Label::builder().label("Parquetta").xalign(0.5).build();
+    title.add_css_class("title-1");
+    content.append(&title);
+
+    let author = gtk::Label::builder()
+        .label("ogregorio")
+        .xalign(0.5)
+        .selectable(true)
+        .build();
+    author.add_css_class("dim-label");
+    content.append(&author);
+
+    content.append(&info_section(
+        "Details",
+        "Source code, releases, and issue tracking are available in the project repository.",
+        Some(("Repository", "https://github.com/ogregorio/parquetta")),
+    ));
+    content.append(&info_section(
+        "Credits",
+        "Built with Rust, GTK4, DuckDB, and the gtk-rs bindings.",
+        None,
+    ));
+    content.append(&info_section(
+        "Legal Notice",
+        "Parquetta is distributed under the MIT License. Third-party components are distributed under their respective licenses.",
+        None,
+    ));
+
+    dialog.connect_response(|dialog, _| dialog.destroy());
+    dialog.present();
+}
+
+fn info_section(title: &str, body: &str, link: Option<(&str, &str)>) -> gtk::Box {
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    section.set_hexpand(true);
+
+    let heading = gtk::Label::builder().label(title).xalign(0.0).build();
+    heading.add_css_class("heading");
+    section.append(&heading);
+
+    let text = gtk::Label::builder()
+        .label(body)
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .build();
+    section.append(&text);
+
+    if let Some((label, uri)) = link {
+        let button = gtk::LinkButton::builder()
+            .label(label)
+            .uri(uri)
+            .halign(gtk::Align::Start)
+            .build();
+        section.append(&button);
+    }
+
+    section
+}
+
 fn set_status(widgets: &Widgets, message: &str) {
     widgets.status_label.set_label(message);
 }
@@ -841,17 +925,6 @@ fn with_service<T>(
 ) -> Result<T, String> {
     let service = DuckDBService::new()?;
     operation(&service)
-}
-
-fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    format!("{size:.1} {}", UNITS[unit])
 }
 
 fn show_startup_error(app: &gtk::Application, message: &str) {

@@ -1,5 +1,4 @@
 mod app;
-mod duckdb_service;
 
 use gtk::prelude::*;
 
