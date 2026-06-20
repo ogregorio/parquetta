@@ -1,0 +1,12 @@
+[package]
+name = "parquetta"
+version = "0.1.0"
+edition = "2021"
+description = "GTK4 desktop viewer for Parquet files powered by DuckDB"
+license = "MIT"
+
+[dependencies]
+duckdb = { version = "~1.10504.0", features = ["bundled", "parquet"] }
+gio = "0.20"
+glib = "0.20"
+gtk = { package = "gtk4", version = "0.9" }
