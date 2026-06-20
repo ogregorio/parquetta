@@ -45,12 +45,14 @@ impl DuckDBService {
             sql_string(path)
         );
         let mut stmt = self.conn.prepare(&sql).map_err(|err| err.to_string())?;
-        let rows = stmt.query_map([], |row| {
-            Ok(ColumnInfo {
-                name: row.get::<_, String>(0)?,
-                data_type: row.get::<_, String>(1)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ColumnInfo {
+                    name: row.get::<_, String>(0)?,
+                    data_type: row.get::<_, String>(1)?,
+                })
             })
-        }).map_err(|err| err.to_string())?;
+            .map_err(|err| err.to_string())?;
 
         rows.collect::<DuckResult<Vec<_>>>()
             .map_err(|err| err.to_string())
@@ -93,13 +95,15 @@ impl DuckDBService {
             .collect::<Vec<_>>();
         let column_count = column_names.len();
 
-        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
-            let mut values = Vec::with_capacity(column_count);
-            for index in 0..column_count {
-                values.push(cell_to_string(row, index));
-            }
-            Ok(values)
-        }).map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map(params![limit as i64, offset as i64], |row| {
+                let mut values = Vec::with_capacity(column_count);
+                for index in 0..column_count {
+                    values.push(cell_to_string(row, index));
+                }
+                Ok(values)
+            })
+            .map_err(|err| err.to_string())?;
 
         Ok(QueryPage {
             columns: column_names,
@@ -137,11 +141,17 @@ impl DuckDBService {
             sql_string(source_path),
             sql_string(output_path)
         );
-        self.conn.execute_batch(&sql).map_err(|err| err.to_string())?;
+        self.conn
+            .execute_batch(&sql)
+            .map_err(|err| err.to_string())?;
         Ok(())
     }
 
-    fn preview_projection(&self, path: &Path, selected_columns: &[String]) -> Result<String, String> {
+    fn preview_projection(
+        &self,
+        path: &Path,
+        selected_columns: &[String],
+    ) -> Result<String, String> {
         let columns = if selected_columns.is_empty() {
             self.get_schema(path)?
                 .into_iter()

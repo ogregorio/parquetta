@@ -224,7 +224,11 @@ fn connect_handlers(
     let parquet_widgets = widgets.clone();
     let parquet_state = state;
     export_parquet_button.connect_clicked(move |_| {
-        export_dialog(&parquet_widgets, parquet_state.clone(), ExportFormat::Parquet);
+        export_dialog(
+            &parquet_widgets,
+            parquet_state.clone(),
+            ExportFormat::Parquet,
+        );
     });
 }
 
@@ -257,16 +261,21 @@ fn refresh_page(widgets: &Widgets, state: &AppState) {
 
     let columns = state.selected_columns.borrow().clone();
     let where_clause = widgets.filter_entry.text().to_string();
-    match state
-        .service
-        .query_page(&path, PAGE_SIZE, state.offset.get(), &columns, &where_clause)
-    {
+    match state.service.query_page(
+        &path,
+        PAGE_SIZE,
+        state.offset.get(),
+        &columns,
+        &where_clause,
+    ) {
         Ok(page) => {
             render_table(&widgets.table, page.clone());
             let page_number = state.offset.get() / PAGE_SIZE + 1;
             widgets.page_label.set_label(&format!("Page {page_number}"));
             widgets.prev_button.set_sensitive(state.offset.get() > 0);
-            widgets.next_button.set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
+            widgets
+                .next_button
+                .set_sensitive(page.rows.len() as u64 == PAGE_SIZE);
             set_status(
                 widgets,
                 &format!("{} rows loaded on this page.", page.rows.len()),
@@ -445,7 +454,10 @@ fn export_dialog(widgets: &Widgets, state: Rc<AppState>, format: ExportFormat) {
 
 fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
     let image = gtk::Image::from_icon_name(icon_name);
-    let button = gtk::Button::builder().child(&image).tooltip_text(tooltip).build();
+    let button = gtk::Button::builder()
+        .child(&image)
+        .tooltip_text(tooltip)
+        .build();
     button
 }
 
