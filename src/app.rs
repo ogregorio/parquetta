@@ -10,6 +10,8 @@ use std::thread;
 use std::time::Duration;
 
 const PAGE_SIZE: u64 = 1000;
+const MIN_INITIAL_COLUMN_WIDTH: i32 = 140;
+const FALLBACK_TABLE_WIDTH: i32 = 960;
 
 #[derive(Clone, Debug)]
 struct RowData {
@@ -604,6 +606,8 @@ fn render_table(widgets: &Widgets, page: QueryPage) {
 
     widgets.table.set_model(Some(&selection));
 
+    let initial_column_width = initial_table_column_width(widgets, page.columns.len());
+
     for (index, title) in page.columns.iter().enumerate() {
         let factory = gtk::SignalListItemFactory::new();
         factory.connect_setup(|_, list_item| {
@@ -630,11 +634,19 @@ fn render_table(widgets: &Widgets, page: QueryPage) {
             &gtk::ColumnViewColumn::builder()
                 .title(title)
                 .factory(&factory)
+                .fixed_width(initial_column_width)
                 .resizable(true)
                 .expand(true)
                 .build(),
         );
     }
+}
+
+fn initial_table_column_width(widgets: &Widgets, column_count: usize) -> i32 {
+    let column_count = i32::try_from(column_count).unwrap_or(i32::MAX).max(1);
+    let table_width = widgets.table.allocated_width().max(FALLBACK_TABLE_WIDTH);
+
+    (table_width / column_count).max(MIN_INITIAL_COLUMN_WIDTH)
 }
 
 fn render_row_details(widgets: &Widgets, columns: &[String], values: &[String]) {
