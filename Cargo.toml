@@ -22,7 +22,7 @@ assets = [
     ["target/release/parquetta", "usr/bin/", "755"],
     ["packaging/dev.parquetta.Parquetta.desktop", "usr/share/applications/dev.parquetta.Parquetta.desktop", "644"],
     ["packaging/dev.parquetta.Parquetta.metainfo.xml", "usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", "644"],
-    ["packaging/dev.parquetta.Parquetta.svg", "usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", "644"],
+    ["Parquetta.svg", "usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -30,5 +30,5 @@ assets = [
     { source = "target/release/parquetta", dest = "/usr/bin/parquetta", mode = "755" },
     { source = "packaging/dev.parquetta.Parquetta.desktop", dest = "/usr/share/applications/dev.parquetta.Parquetta.desktop", mode = "644" },
     { source = "packaging/dev.parquetta.Parquetta.metainfo.xml", dest = "/usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", mode = "644" },
-    { source = "packaging/dev.parquetta.Parquetta.svg", dest = "/usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", mode = "644" },
+    { source = "Parquetta.svg", dest = "/usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", mode = "644" },
 ]

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title desc">
+  <title id="title">Parquetta</title>
+  <desc id="desc">A Parquet data sheet with a preview eye.</desc>
+  <defs>
+    <linearGradient id="paper" x1="137" y1="68" x2="354" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f9fcff"/>
+      <stop offset="0.54" stop-color="#e7f1fb"/>
+      <stop offset="1" stop-color="#c9dced"/>
+    </linearGradient>
+    <linearGradient id="side" x1="89" y1="80" x2="156" y2="404" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#66a8df"/>
+      <stop offset="0.45" stop-color="#327ab8"/>
+      <stop offset="1" stop-color="#195d9d"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="326" y1="82" x2="407" y2="163" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eef6ff"/>
+      <stop offset="0.58" stop-color="#74ace7"/>
+      <stop offset="1" stop-color="#2e7ccc"/>
+    </linearGradient>
+    <linearGradient id="foldShade" x1="323" y1="119" x2="407" y2="193" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7899ba" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#123c64" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="blueBar" x1="144" y1="114" x2="144" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bfe6fb"/>
+      <stop offset="1" stop-color="#1182c6"/>
+    </linearGradient>
+    <linearGradient id="cyanBar" x1="259" y1="111" x2="259" y2="377" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b7ecec"/>
+      <stop offset="1" stop-color="#239aa8"/>
+    </linearGradient>
+    <radialGradient id="iris" cx="292" cy="304" r="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18334f"/>
+      <stop offset="0.43" stop-color="#155d98"/>
+      <stop offset="0.72" stop-color="#29b9d9"/>
+      <stop offset="1" stop-color="#94fbf1"/>
+    </radialGradient>
+    <linearGradient id="eye" x1="208" y1="269" x2="412" y2="381" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbfdff"/>
+      <stop offset="0.52" stop-color="#eef5fb"/>
+      <stop offset="1" stop-color="#cbd9e8"/>
+    </linearGradient>
+    <filter id="softShadow" x="-15%" y="-12%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#153b5e" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#softShadow)">
+    <path fill="url(#side)" d="M123 75h193c11 0 20 4 28 12l62 62c8 8 12 18 12 29v190c0 21-17 38-38 38H123c-21 0-38-17-38-38V113c0-21 17-38 38-38z"/>
+    <path fill="url(#paper)" d="M145 72h170c8 0 16 3 22 9l66 66c6 6 9 14 9 23v195c0 21-17 38-38 38H145c-21 0-38-17-38-38V110c0-21 17-38 38-38z"/>
+    <path fill="url(#fold)" d="M321 78v54c0 18 15 33 33 33h54c-2-7-6-13-11-18l-58-58c-5-5-11-9-18-11z"/>
+    <path fill="none" stroke="#f9fcff" stroke-width="12" stroke-linecap="round" d="M327 84v48c0 15 12 27 27 27h48"/>
+    <path fill="url(#foldShade)" d="M321 128c0 23 19 42 42 42h45v22h-52c-31 0-57-25-57-57V83h22v45z"/>
+  </g>
+
+  <g opacity="0.94">
+    <rect x="142" y="116" width="35" height="262" rx="2" fill="url(#blueBar)"/>
+    <rect x="181" y="122" width="32" height="256" rx="2" fill="url(#cyanBar)" opacity="0.72"/>
+    <rect x="218" y="116" width="35" height="262" rx="2" fill="url(#blueBar)" opacity="0.58"/>
+    <rect x="257" y="116" width="35" height="262" rx="2" fill="url(#cyanBar)" opacity="0.72"/>
+    <rect x="296" y="206" width="34" height="172" rx="2" fill="#7dc6dc" opacity="0.55"/>
+    <rect x="335" y="195" width="35" height="183" rx="2" fill="#a8d9eb" opacity="0.54"/>
+
+    <path stroke="#eef7ff" stroke-width="8" stroke-linecap="round" opacity="0.72" d="M144 166h31M144 220h31M144 268h31M144 319h31M184 175h27M184 226h27M184 274h27M221 160h30M221 230h30M260 172h30M260 239h30M297 236h30M337 228h31"/>
+    <rect x="296" y="212" width="33" height="20" rx="2" fill="#ffc96e"/>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <path fill="url(#eye)" d="M207 323c22-36 57-55 104-55s82 19 104 55c-22 36-57 55-104 55s-82-19-104-55z"/>
+    <circle cx="311" cy="323" r="56" fill="#0f426e"/>
+    <circle cx="311" cy="323" r="48" fill="url(#iris)"/>
+    <circle cx="316" cy="325" r="27" fill="#09243e"/>
+    <path fill="#5bd3e9" fill-opacity="0.52" d="M267 323c0-24 20-44 44-44 12 0 23 5 31 13-33-2-58 15-67 45-5-4-8-9-8-14z"/>
+    <circle cx="289" cy="303" r="12" fill="#f8fdff"/>
+    <circle cx="275" cy="320" r="7" fill="#9cecff" opacity="0.7"/>
+    <path fill="#b7ffff" fill-opacity="0.45" d="M347 319c4 21-10 43-32 48 24-18 34-38 30-62 1 4 2 9 2 14z"/>
+    <path fill="#d5e2ee" d="M207 323c16 23 37 39 63 48-30-2-54-12-72-31-5-5-5-13 0-18l9-9v10z" opacity="0.58"/>
+    <path fill="#d5e2ee" d="M415 323c-16 23-37 39-63 48 30-2 54-12 72-31 5-5 5-13 0-18l-9-9v10z" opacity="0.58"/>
+  </g>
+</svg>
