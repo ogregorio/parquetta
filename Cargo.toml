@@ -1,6 +1,6 @@
 [package]
 name = "parquetta"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Parquetta is a simple software for reading parquet files."
 license = "MIT"
@@ -23,6 +23,7 @@ assets = [
     ["packaging/dev.parquetta.Parquetta.desktop", "usr/share/applications/dev.parquetta.Parquetta.desktop", "644"],
     ["packaging/dev.parquetta.Parquetta.metainfo.xml", "usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", "644"],
     ["Parquetta.svg", "usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", "644"],
+    ["LICENSE", "usr/share/doc/parquetta/copyright", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -31,4 +32,5 @@ assets = [
     { source = "packaging/dev.parquetta.Parquetta.desktop", dest = "/usr/share/applications/dev.parquetta.Parquetta.desktop", mode = "644" },
     { source = "packaging/dev.parquetta.Parquetta.metainfo.xml", dest = "/usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", mode = "644" },
     { source = "Parquetta.svg", dest = "/usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", mode = "644" },
+    { source = "LICENSE", dest = "/usr/share/licenses/parquetta/LICENSE", mode = "644" },
 ]
