@@ -30,6 +30,8 @@ struct Widgets {
     next_button: gtk::Button,
     page_label: gtk::Label,
     table: gtk::ColumnView,
+    row_details_revealer: gtk::Revealer,
+    row_details_box: gtk::Box,
     status_label: gtk::Label,
 }
 
@@ -57,24 +59,28 @@ pub fn build_ui(app: &gtk::Application) {
     let open_button = icon_button("document-open-symbolic", "Open Parquet");
     let export_csv_button = icon_button("document-save-symbolic", "Export CSV");
     let export_parquet_button = icon_button("drive-harddisk-symbolic", "Export Parquet");
-    let apply_filter_button = gtk::Button::with_label("Apply");
-
-    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    header.set_margin_top(10);
-    header.set_margin_bottom(10);
-    header.set_margin_start(12);
-    header.set_margin_end(12);
-    header.append(&open_button);
-    header.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+    let apply_filter_button = icon_button("system-search-symbolic", "Apply filter");
 
     let filter_entry = gtk::Entry::builder()
         .hexpand(true)
+        .width_chars(44)
         .placeholder_text("WHERE age > 30")
         .build();
-    header.append(&filter_entry);
-    header.append(&apply_filter_button);
-    header.append(&export_csv_button);
-    header.append(&export_parquet_button);
+    let filter_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    filter_box.set_hexpand(true);
+    filter_box.set_margin_top(6);
+    filter_box.set_margin_bottom(6);
+    filter_box.append(&filter_entry);
+    filter_box.append(&apply_filter_button);
+
+    let header = gtk::HeaderBar::builder()
+        .show_title_buttons(true)
+        .title_widget(&filter_box)
+        .build();
+    header.pack_start(&open_button);
+    header.pack_end(&export_parquet_button);
+    header.pack_end(&export_csv_button);
+    window.set_titlebar(Some(&header));
 
     let metadata_label = gtk::Label::builder()
         .xalign(0.0)
@@ -84,13 +90,18 @@ pub fn build_ui(app: &gtk::Application) {
         .build();
 
     let columns_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    columns_box.set_vexpand(true);
     let columns_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .min_content_width(280)
+        .hexpand(true)
+        .vexpand(true)
         .child(&columns_box)
         .build();
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    sidebar.set_hexpand(false);
+    sidebar.set_vexpand(true);
     sidebar.set_margin_top(12);
     sidebar.set_margin_bottom(12);
     sidebar.set_margin_start(12);
@@ -112,6 +123,27 @@ pub fn build_ui(app: &gtk::Application) {
         .child(&table)
         .build();
 
+    let row_details_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    row_details_box.set_margin_top(12);
+    row_details_box.set_margin_bottom(12);
+    row_details_box.set_margin_start(12);
+    row_details_box.set_margin_end(12);
+
+    let row_details_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_width(320)
+        .hexpand(false)
+        .vexpand(true)
+        .child(&row_details_box)
+        .build();
+
+    let row_details_revealer = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::SlideLeft)
+        .transition_duration(180)
+        .reveal_child(false)
+        .child(&row_details_scroll)
+        .build();
+
     let prev_button = gtk::Button::with_label("Previous");
     let next_button = gtk::Button::with_label("Next");
     let page_label = gtk::Label::new(Some("Page 1"));
@@ -131,16 +163,29 @@ pub fn build_ui(app: &gtk::Application) {
     pager.append(&page_label);
     pager.append(&status_label);
 
+    let preview = gtk::Paned::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .start_child(&table_scroll)
+        .resize_start_child(true)
+        .shrink_start_child(false)
+        .end_child(&row_details_revealer)
+        .resize_end_child(false)
+        .shrink_end_child(false)
+        .build();
+
     let content = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
         .start_child(&sidebar)
         .resize_start_child(false)
         .shrink_start_child(false)
-        .end_child(&table_scroll)
+        .end_child(&preview)
+        .resize_end_child(true)
+        .shrink_end_child(false)
         .build();
+    content.set_position(320);
+    preview.set_position(900);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.append(&header);
     root.append(&content);
     root.append(&pager);
     window.set_child(Some(&root));
@@ -154,6 +199,8 @@ pub fn build_ui(app: &gtk::Application) {
         next_button,
         page_label,
         table,
+        row_details_revealer,
+        row_details_box,
         status_label,
     };
 
@@ -269,7 +316,7 @@ fn refresh_page(widgets: &Widgets, state: &AppState) {
         &where_clause,
     ) {
         Ok(page) => {
-            render_table(&widgets.table, page.clone());
+            render_table(widgets, page.clone());
             let page_number = state.offset.get() / PAGE_SIZE + 1;
             widgets.page_label.set_label(&format!("Page {page_number}"));
             widgets.prev_button.set_sensitive(state.offset.get() > 0);
@@ -335,12 +382,14 @@ fn render_column_picker(widgets: &Widgets, state: Rc<AppState>, metadata: &Parqu
     }
 }
 
-fn render_table(table: &gtk::ColumnView, page: QueryPage) {
-    while let Some(column) = table.columns().item(0) {
+fn render_table(widgets: &Widgets, page: QueryPage) {
+    clear_row_details(widgets);
+
+    while let Some(column) = widgets.table.columns().item(0) {
         let column = column
             .downcast::<gtk::ColumnViewColumn>()
             .expect("ColumnView columns contain ColumnViewColumn");
-        table.remove_column(&column);
+        widgets.table.remove_column(&column);
     }
 
     let store = gio::ListStore::new::<BoxedAnyObject>();
@@ -348,8 +397,23 @@ fn render_table(table: &gtk::ColumnView, page: QueryPage) {
         store.append(&BoxedAnyObject::new(RowData { values: row }));
     }
 
-    let selection = gtk::NoSelection::new(Some(store));
-    table.set_model(Some(&selection));
+    let selection = gtk::SingleSelection::new(Some(store));
+    selection.set_can_unselect(true);
+    selection.set_autoselect(false);
+
+    let detail_widgets = widgets.clone();
+    let detail_columns = page.columns.clone();
+    selection.connect_selected_item_notify(move |selection| {
+        let Some(item) = selection.selected_item().and_downcast::<BoxedAnyObject>() else {
+            clear_row_details(&detail_widgets);
+            return;
+        };
+
+        let row = item.borrow::<RowData>();
+        render_row_details(&detail_widgets, &detail_columns, &row.values);
+    });
+
+    widgets.table.set_model(Some(&selection));
 
     for (index, title) in page.columns.iter().enumerate() {
         let factory = gtk::SignalListItemFactory::new();
@@ -373,7 +437,7 @@ fn render_table(table: &gtk::ColumnView, page: QueryPage) {
             label.set_label(row.values.get(index).map(String::as_str).unwrap_or(""));
         });
 
-        table.append_column(
+        widgets.table.append_column(
             &gtk::ColumnViewColumn::builder()
                 .title(title)
                 .factory(&factory)
@@ -381,6 +445,51 @@ fn render_table(table: &gtk::ColumnView, page: QueryPage) {
                 .expand(true)
                 .build(),
         );
+    }
+}
+
+fn render_row_details(widgets: &Widgets, columns: &[String], values: &[String]) {
+    while let Some(child) = widgets.row_details_box.first_child() {
+        widgets.row_details_box.remove(&child);
+    }
+
+    let title = gtk::Label::builder()
+        .xalign(0.0)
+        .label("Row details")
+        .build();
+    title.add_css_class("heading");
+    widgets.row_details_box.append(&title);
+
+    for (index, column) in columns.iter().enumerate() {
+        let field = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        field.set_margin_bottom(8);
+
+        let name = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .label(column)
+            .build();
+        name.add_css_class("dim-label");
+
+        let value = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .selectable(true)
+            .label(values.get(index).map(String::as_str).unwrap_or(""))
+            .build();
+
+        field.append(&name);
+        field.append(&value);
+        widgets.row_details_box.append(&field);
+    }
+
+    widgets.row_details_revealer.set_reveal_child(true);
+}
+
+fn clear_row_details(widgets: &Widgets) {
+    widgets.row_details_revealer.set_reveal_child(false);
+    while let Some(child) = widgets.row_details_box.first_child() {
+        widgets.row_details_box.remove(&child);
     }
 }
 
@@ -454,11 +563,10 @@ fn export_dialog(widgets: &Widgets, state: Rc<AppState>, format: ExportFormat) {
 
 fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
     let image = gtk::Image::from_icon_name(icon_name);
-    let button = gtk::Button::builder()
+    gtk::Button::builder()
         .child(&image)
         .tooltip_text(tooltip)
-        .build();
-    button
+        .build()
 }
 
 fn set_status(widgets: &Widgets, message: &str) {
