@@ -80,7 +80,8 @@ impl DuckDBService {
         selected_columns: &[String],
         where_clause: &str,
     ) -> Result<QueryPage, String> {
-        let projected_columns = self.preview_projection(path, selected_columns)?;
+        let columns = self.preview_columns(path, selected_columns)?;
+        let projected_columns = preview_projection(&columns);
         let filter = normalize_where_clause(where_clause)?;
         let sql = format!(
             "SELECT {projected_columns} FROM read_parquet({}) {filter} LIMIT ? OFFSET ?",
@@ -88,12 +89,7 @@ impl DuckDBService {
         );
 
         let mut stmt = self.conn.prepare(&sql).map_err(|err| err.to_string())?;
-        let column_names = stmt
-            .column_names()
-            .iter()
-            .map(|name| name.to_string())
-            .collect::<Vec<_>>();
-        let column_count = column_names.len();
+        let column_count = columns.len();
 
         let rows = stmt
             .query_map(params![limit as i64, offset as i64], |row| {
@@ -106,7 +102,7 @@ impl DuckDBService {
             .map_err(|err| err.to_string())?;
 
         Ok(QueryPage {
-            columns: column_names,
+            columns,
             rows: rows
                 .collect::<DuckResult<Vec<_>>>()
                 .map_err(|err| err.to_string())?,
@@ -147,11 +143,11 @@ impl DuckDBService {
         Ok(())
     }
 
-    fn preview_projection(
+    fn preview_columns(
         &self,
         path: &Path,
         selected_columns: &[String],
-    ) -> Result<String, String> {
+    ) -> Result<Vec<String>, String> {
         let columns = if selected_columns.is_empty() {
             self.get_schema(path)?
                 .into_iter()
@@ -165,14 +161,7 @@ impl DuckDBService {
             return Err("No columns found in the Parquet file".to_string());
         }
 
-        Ok(columns
-            .iter()
-            .map(|column| {
-                let quoted = quote_identifier(column);
-                format!("CAST({quoted} AS VARCHAR) AS {quoted}")
-            })
-            .collect::<Vec<_>>()
-            .join(", "))
+        Ok(columns)
     }
 
     fn count_rows(&self, path: &Path) -> DuckResult<u64> {
@@ -216,6 +205,17 @@ fn normalize_where_clause(input: &str) -> Result<String, String> {
 
 fn quote_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn preview_projection(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(|column| {
+            let quoted = quote_identifier(column);
+            format!("CAST({quoted} AS VARCHAR) AS {quoted}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn sql_string(path: &Path) -> String {
