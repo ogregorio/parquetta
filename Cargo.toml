@@ -4,9 +4,31 @@ version = "0.1.0"
 edition = "2021"
 description = "GTK4 desktop viewer for Parquet files powered by DuckDB"
 license = "MIT"
+repository = "https://github.com/ogregorio/parquetta"
 
 [dependencies]
 duckdb = { version = "~1.10504.0", features = ["bundled", "parquet"] }
 gio = "0.20"
 glib = "0.20"
 gtk = { package = "gtk4", version = "0.9" }
+
+[package.metadata.deb]
+maintainer = "Parquetta Maintainers <noreply@example.com>"
+copyright = "2026 Parquetta Maintainers"
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/parquetta", "usr/bin/", "755"],
+    ["packaging/dev.parquetta.Parquetta.desktop", "usr/share/applications/dev.parquetta.Parquetta.desktop", "644"],
+    ["packaging/dev.parquetta.Parquetta.metainfo.xml", "usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", "644"],
+    ["packaging/dev.parquetta.Parquetta.svg", "usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/parquetta", dest = "/usr/bin/parquetta", mode = "755" },
+    { source = "packaging/dev.parquetta.Parquetta.desktop", dest = "/usr/share/applications/dev.parquetta.Parquetta.desktop", mode = "644" },
+    { source = "packaging/dev.parquetta.Parquetta.metainfo.xml", dest = "/usr/share/metainfo/dev.parquetta.Parquetta.metainfo.xml", mode = "644" },
+    { source = "packaging/dev.parquetta.Parquetta.svg", dest = "/usr/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg", mode = "644" },
+]

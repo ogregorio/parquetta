@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.parquetta.Parquetta</id>
+  <name>Parquetta</name>
+  <summary>Preview and query Parquet files with DuckDB</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Parquetta is a GTK4 desktop application for inspecting Parquet files,
+    previewing pages of rows, filtering with SQL, and exporting results.</p>
+  </description>
+  <launchable type="desktop-id">dev.parquetta.Parquetta.desktop</launchable>
+  <categories>
+    <category>Utility</category>
+    <category>Development</category>
+  </categories>
+  <url type="homepage">https://github.com/ogregorio/parquetta</url>
+</component>

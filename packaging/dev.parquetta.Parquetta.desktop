@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Parquetta
+Comment=Preview and query Parquet files with DuckDB
+Exec=parquetta
+Icon=dev.parquetta.Parquetta
+Terminal=false
+Categories=Utility;Development;Database;
+MimeType=application/vnd.apache.parquet;

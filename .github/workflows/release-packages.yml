@@ -1,0 +1,203 @@
+name: Release Packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_ID: dev.parquetta.Parquetta
+
+jobs:
+  version:
+    name: Detect Version Change
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(python3 - <<'PY'
+          import tomllib
+          with open("Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )"
+
+          changed="true"
+          if [ "${{ github.event_name }}" = "push" ]; then
+              before="${{ github.event.before }}"
+              if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ]; then
+                  previous="$(
+                      git show "$before:Cargo.toml" 2>/dev/null | python3 -c 'import sys,tomllib; print(tomllib.loads(sys.stdin.read())["package"]["version"])' 2>/dev/null || true
+                  )"
+                  if [ "$previous" = "$version" ]; then
+                      changed="false"
+                  fi
+              fi
+          fi
+
+          {
+              echo "changed=$changed"
+              echo "version=$version"
+              echo "tag=v$version"
+          } >> "$GITHUB_OUTPUT"
+
+  deb:
+    name: Build .deb
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang gcc g++ libgtk-4-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build Debian package
+        run: |
+          mkdir -p dist
+          cargo deb --no-build --output "dist/parquetta_${{ needs.version.outputs.version }}_amd64.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/*.deb
+          if-no-files-found: error
+
+  rpm:
+    name: Build .rpm
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    container: fedora:43
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          dnf install -y cargo clang gcc gcc-c++ gtk4-devel make pkgconf-pkg-config rpm-build rust
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build RPM package
+        run: |
+          mkdir -p dist
+          cargo generate-rpm -o "dist/parquetta-${{ needs.version.outputs.version }}-1.x86_64.rpm"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  flatpak:
+    name: Build Flatpak
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang flatpak flatpak-builder g++ gcc libgtk-4-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Install GNOME Flatpak runtime
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y --noninteractive flathub org.gnome.Platform//49
+          sudo flatpak install -y --noninteractive flathub org.gnome.Sdk//49
+
+      - name: Build Flatpak bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          flatpak build-init appdir "$APP_ID" org.gnome.Sdk org.gnome.Platform 49
+          flatpak build appdir install -Dm755 target/release/parquetta /app/bin/parquetta
+          flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.desktop /app/share/applications/dev.parquetta.Parquetta.desktop
+          flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.metainfo.xml /app/share/metainfo/dev.parquetta.Parquetta.metainfo.xml
+          flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.svg /app/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg
+          flatpak build-finish appdir \
+            --command=parquetta \
+            --share=ipc \
+            --socket=wayland \
+            --socket=fallback-x11 \
+            --device=dri \
+            --filesystem=home
+          flatpak build-export repo appdir
+          flatpak build-bundle repo "dist/parquetta-${{ needs.version.outputs.version }}.flatpak" "$APP_ID"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-package
+          path: dist/*.flatpak
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, deb, rpm, flatpak]
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG" --force
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" dist/* --clobber
+          else
+              gh release create "$TAG" dist/* \
+                --title "Parquetta $VERSION" \
+                --generate-notes
+          fi
