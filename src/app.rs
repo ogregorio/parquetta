@@ -76,6 +76,8 @@ pub fn build_ui(app: &gtk::Application) {
         return;
     }
 
+    install_css();
+
     let (sender, receiver) = mpsc::channel();
     let state = Rc::new(AppState {
         sender,
@@ -162,6 +164,7 @@ pub fn build_ui(app: &gtk::Application) {
         .vexpand(true)
         .child(&row_details_box)
         .build();
+    row_details_scroll.add_css_class("row-details-panel");
 
     let row_details_revealer = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideLeft)
@@ -251,6 +254,28 @@ pub fn build_ui(app: &gtk::Application) {
         export_parquet_button,
     );
     widgets.window.present();
+}
+
+fn install_css() {
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(
+        ".row-details-panel {
+            background: @theme_bg_color;
+            border-left: 1px solid @borders;
+        }
+
+        .row-details-panel viewport {
+            background: @theme_bg_color;
+        }",
+    );
+
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
 }
 
 fn connect_handlers(
