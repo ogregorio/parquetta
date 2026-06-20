@@ -46,10 +46,10 @@ Install Rust, GTK4, and the native build tools for your distribution.
 
 ```bash
 # Fedora
-sudo dnf install rust cargo gtk4-devel pkgconf-pkg-config clang
+sudo dnf install rust cargo gtk4-devel libadwaita-devel pkgconf-pkg-config clang
 
 # Ubuntu / Debian
-sudo apt install rustc cargo libgtk-4-dev pkg-config clang
+sudo apt install rustc cargo libgtk-4-dev libadwaita-1-dev pkg-config clang
 ```
 
 The `duckdb` crate is built with bundled DuckDB and Parquet support.

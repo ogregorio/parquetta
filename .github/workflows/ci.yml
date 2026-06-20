@@ -19,7 +19,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang gcc g++ libgtk-4-dev pkg-config
+          sudo apt-get install -y clang gcc g++ libadwaita-1-dev libgtk-4-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
         with:

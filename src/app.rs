@@ -1,6 +1,5 @@
-use gio::prelude::*;
+use adw::prelude::*;
 use glib::BoxedAnyObject;
-use gtk::prelude::*;
 use parquetta::duckdb_service::{DuckDBService, ParquetMetadata, QueryPage};
 use parquetta::formatting::{human_size, initial_column_width, PAGE_SIZE};
 use parquetta::query::{ExportFormat, QueryInput};
@@ -55,7 +54,7 @@ enum UiMessage {
 
 #[derive(Clone)]
 struct Widgets {
-    window: gtk::ApplicationWindow,
+    window: adw::ApplicationWindow,
     metadata_label: gtk::Label,
     columns_box: gtk::Box,
     filter_entry: gtk::Entry,
@@ -70,7 +69,7 @@ struct Widgets {
     status_label: gtk::Label,
 }
 
-pub fn build_ui(app: &gtk::Application) {
+pub fn build_ui(app: &adw::Application) {
     if let Err(err) = DuckDBService::new() {
         show_startup_error(app, &format!("Failed to start DuckDB: {err}"));
         return;
@@ -90,7 +89,7 @@ pub fn build_ui(app: &gtk::Application) {
         export_job_id: Cell::new(0),
     });
 
-    let window = gtk::ApplicationWindow::builder()
+    let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Parquetta")
         .default_width(1280)
@@ -109,12 +108,14 @@ pub fn build_ui(app: &gtk::Application) {
         .placeholder_text("WHERE age > 30")
         .build();
     let advanced_toggle = gtk::CheckButton::with_label("Advanced");
-    let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
+    let header = adw::HeaderBar::builder()
+        .show_start_title_buttons(true)
+        .show_end_title_buttons(true)
+        .build();
     header.pack_start(&open_button);
     header.pack_end(&info_button);
     header.pack_end(&export_parquet_button);
     header.pack_end(&export_csv_button);
-    window.set_titlebar(Some(&header));
 
     let metadata_label = gtk::Label::builder()
         .xalign(0.0)
@@ -229,7 +230,11 @@ pub fn build_ui(app: &gtk::Application) {
     root.append(&content);
     root.append(&filter_bar);
     root.append(&pager);
-    window.set_child(Some(&root));
+
+    let toolbar_view = adw::ToolbarView::new();
+    toolbar_view.add_top_bar(&header);
+    toolbar_view.set_content(Some(&root));
+    window.set_content(Some(&toolbar_view));
 
     let widgets = Widgets {
         window,
@@ -738,7 +743,7 @@ fn clear_column_picker(widgets: &Widgets) {
     }
 }
 
-fn open_file_dialog<F>(window: &gtk::ApplicationWindow, on_file: F)
+fn open_file_dialog<F>(window: &adw::ApplicationWindow, on_file: F)
 where
     F: Fn(PathBuf) + 'static,
 {
@@ -815,7 +820,7 @@ fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
         .build()
 }
 
-fn show_info_dialog(window: &gtk::ApplicationWindow) {
+fn show_info_dialog(window: &adw::ApplicationWindow) {
     let dialog = gtk::Dialog::builder()
         .title("About Parquetta")
         .transient_for(window)
@@ -871,7 +876,7 @@ fn app_icon_image(size: i32) -> gtk::Image {
     match gtk::gdk::Texture::from_file(&icon_file) {
         Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
         Err(_) => {
-            let image = gtk::Image::from_icon_name("dialog-information-symbolic");
+            let image = gtk::Image::from_icon_name("dev.parquetta.Parquetta");
             image.set_pixel_size(size);
             image
         }
@@ -938,8 +943,8 @@ fn with_service<T>(
     operation(&service)
 }
 
-fn show_startup_error(app: &gtk::Application, message: &str) {
-    let window = gtk::ApplicationWindow::builder()
+fn show_startup_error(app: &adw::Application, message: &str) {
+    let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Parquetta")
         .default_width(520)
@@ -953,6 +958,6 @@ fn show_startup_error(app: &gtk::Application, message: &str) {
         .wrap(true)
         .label(message)
         .build();
-    window.set_child(Some(&label));
+    window.set_content(Some(&label));
     window.present();
 }

@@ -1,9 +1,9 @@
 mod app;
 
-use gtk::prelude::*;
+use adw::prelude::*;
 
 fn main() -> glib::ExitCode {
-    let app = gtk::Application::builder()
+    let app = adw::Application::builder()
         .application_id("dev.parquetta.Parquetta")
         .build();
 
