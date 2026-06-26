@@ -212,6 +212,7 @@ jobs:
           flatpak build appdir install -Dm755 target/release/parquetta /app/bin/parquetta
           flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.desktop /app/share/applications/dev.parquetta.Parquetta.desktop
           flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.metainfo.xml /app/share/metainfo/dev.parquetta.Parquetta.metainfo.xml
+          flatpak build appdir install -Dm644 packaging/dev.parquetta.Parquetta.mime.xml /app/share/mime/packages/dev.parquetta.Parquetta.xml
           flatpak build appdir install -Dm644 Parquetta.svg /app/share/icons/hicolor/scalable/apps/dev.parquetta.Parquetta.svg
           flatpak build appdir install -Dm644 LICENSE /app/share/licenses/parquetta/LICENSE
           flatpak build-finish appdir \

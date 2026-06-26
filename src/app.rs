@@ -69,7 +69,7 @@ struct Widgets {
     status_label: gtk::Label,
 }
 
-pub fn build_ui(app: &adw::Application) {
+pub fn build_ui(app: &adw::Application, initial_file: Option<PathBuf>) {
     if let Err(err) = DuckDBService::new() {
         show_startup_error(app, &format!("Failed to start DuckDB: {err}"));
         return;
@@ -254,7 +254,7 @@ pub fn build_ui(app: &adw::Application) {
 
     connect_handlers(
         &widgets,
-        state,
+        state.clone(),
         receiver,
         open_button,
         info_button,
@@ -263,6 +263,10 @@ pub fn build_ui(app: &adw::Application) {
         export_parquet_button,
     );
     widgets.window.present();
+
+    if let Some(path) = initial_file {
+        load_file(&widgets, state, path);
+    }
 }
 
 fn install_css() {
@@ -756,6 +760,8 @@ where
         .build();
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("Parquet"));
+    filter.add_mime_type("application/vnd.apache.parquet");
+    filter.add_mime_type("application/x-parquet");
     filter.add_pattern("*.parquet");
     dialog.add_filter(&filter);
 
