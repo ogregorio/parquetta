@@ -10,6 +10,10 @@
     previewing pages of rows, filtering with SQL, and exporting results.</p>
   </description>
   <launchable type="desktop-id">dev.parquetta.Parquetta.desktop</launchable>
+  <provides>
+    <mediatype>application/vnd.apache.parquet</mediatype>
+    <mediatype>application/x-parquet</mediatype>
+  </provides>
   <categories>
     <category>Utility</category>
     <category>Development</category>
