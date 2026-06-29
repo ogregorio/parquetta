@@ -1,6 +1,6 @@
 [package]
 name = "parquetta"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Parquetta is a simple software for reading parquet files."
 license = "MIT"
